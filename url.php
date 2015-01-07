@@ -1,16 +1,28 @@
 <?php
+const KEEP_RUNNING = true;
+const DEBUG_MODE = false;
+const STORE_IN_DB = true;
+const COUNTER_INIT = 10;
+
 $host = 'localhost';
 $username = 'root';
 $pass = '';
 $dbName = 'pemulung';
 $tableName = 'url';
+
 // check out the {counter} token. We use this to increase the page
-$url = 'http://www.someurl.com/search/?&page={counter}';
+$url = 'http://www.SOMEURL.com/search/index?page={counter}';
 $whiteList = array(
-    'detil-rumah-dijual-di',
+    '-dijual-',
+);
+$blacklist = array(
+    '/mortgage',
 );
 $append = '';
 
+
+
+// TUrn on the the machine
 $mysqli = new mysqli($host, $username, $pass, $dbName);
 if($mysqli->connect_errno){
     echo "Failed to connect to MySQL: (" . $mysqli->connect_errno . ") " . $mysqli->connect_error;
@@ -31,7 +43,7 @@ if(!$mysqli->query($query)){
 }
 
 // Find some valuable items (mine)
-$counter = 6184;
+$counter = COUNTER_INIT;
 $doc = new DOMDocument;
 do {
     $tps = str_replace("{counter}", $counter, $url);
@@ -44,19 +56,33 @@ do {
     if($flag){
         $links = $doc->getElementsByTagName("a");
         foreach($links as $link){
-            if(sizeof($whiteList) > 0){
-                foreach($whiteList as $needle){
-                    $sampah = trim($append . $link->getAttribute('href'));
-                    $found = strpos($sampah, $needle);
-                    if($found){
-                        $hash = hash("sha256", $sampah);
-                        $dup = $mysqli->query("SELECT * FROM $tableName WHERE hash = '$hash'");
-                        if($dup->num_rows == 0){
-                            $query = "INSERT INTO $tableName (url, hash) VALUES ('$sampah', '$hash')";
-                            $mysqli->query($query);
-                            break;
+            // Check white list
+            foreach($whiteList as $needle){
+                $sampah = trim($append . $link->getAttribute('href'));
+                if(DEBUG_MODE){
+                    echo $sampah.PHP_EOL;
+                }
+                $found = strpos($sampah, $needle);
+                if($found){
+                    // check blacklist
+                    foreach($blacklist as $blackNeedle){
+                        $exclude = strpos($sampah, $blackNeedle);
+                        if(!$exclude){
+                            if(STORE_IN_DB){
+                                $hash = hash("sha256", $sampah);
+                                // check duplicate in database
+                                $dup = $mysqli->query("SELECT * FROM $tableName WHERE hash = '$hash'");
+                                if($dup->num_rows == 0){
+                                    $query = "INSERT INTO $tableName (url, hash) VALUES ('$sampah', '$hash')";
+                                    $mysqli->query($query);
+                                    break;
+                                }
+                            } else {
+                                echo $sampah.PHP_EOL;
+                            }
                         }
                     }
+
                 }
             }
         }
@@ -66,7 +92,7 @@ do {
     $rest = rand(1, 10);
 
     // Maintenance cycle
-    if($counter == 1){
+    if(KEEP_RUNNING && $counter == 0){
         $counter = 5;
         // sleep longer
         $rest = rand(100, 1000);
@@ -75,4 +101,4 @@ do {
     echo "Sleeping for $rest seconds... Good night!".PHP_EOL;
     sleep($rest);
 
-} while (true);
+} while ($counter > 0);
